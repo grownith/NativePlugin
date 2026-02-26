@@ -1,0 +1,12 @@
+{
+	"name": "com.grownith.mobilekeystore",
+	"displayName":"MobileKeystore",
+	"version": "0.1.0",
+	"unity": "6000.3",
+	"description": "Mobile Key Store Plugin for Unity with secure credential management",
+	"author": {
+		"name": "Thaina Yu",
+		"email": "grownith@email.com"
+	},
+	"documentationUrl": "https://github.com/grownith/mobile-keystore-plugin"
+}
