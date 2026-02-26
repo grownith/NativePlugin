@@ -55,14 +55,18 @@ public class KeyStoreWrapper {
 
             var cert = ks.getCertificate(keyAlias);
             var publicKey = (ECPublicKey)cert.getPublicKey();
-            return new ECKey.Builder(Curve.forECParameterSpec(publicKey.getParams()),publicKey)
-                    .keyUse(KeyUse.SIGNATURE)
-                    .keyIDFromThumbprint()
-                    .build().toJSONString();
+            return getPublicKeyECKey(publicKey).toJSONString();
         } catch (Exception e) {
             Log.e("UnityPlugin", "Error retrieving encrypted public key: " + e.getMessage());
             return "";
         }
+    }
+
+    static ECKey getPublicKeyECKey(ECPublicKey publicKey) throws Exception {
+        return new ECKey.Builder(Curve.forECParameterSpec(publicKey.getParams()),publicKey)
+                .keyUse(KeyUse.SIGNATURE)
+                .keyIDFromThumbprint()
+                .build();
     }
 
     /**
@@ -107,7 +111,7 @@ public class KeyStoreWrapper {
             var cert = keyStore.getCertificate(keyAlias);
             var publicKey = (ECPublicKey)cert.getPublicKey();
             var signer = new ECDSASigner(privateKey,Curve.forECParameterSpec(publicKey.getParams()));
-            var jwsObject = new JWSObject(new JWSHeader(JWSAlgorithm.ES256),new Payload(Base64URL.from(jsonPayload)));
+            var jwsObject = new JWSObject(new JWSHeader.Builder(JWSAlgorithm.ES256).keyID(getPublicKeyECKey(publicKey).computeThumbprint().toString()).build(),new Payload(Base64URL.from(jsonPayload)));
             jwsObject.sign(signer);
             return jwsObject.serialize();
         } catch (Exception e) {

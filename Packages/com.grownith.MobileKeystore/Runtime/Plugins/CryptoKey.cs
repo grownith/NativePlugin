@@ -12,7 +12,24 @@ using System.Runtime.InteropServices;
 
 public static class CryptoKey
 {
-#if UNITY_IOS
+#if UNITY_EDITOR
+    const string defaultLabel = "";
+    static string ComputeJwkThumbprint(X509Certificate2 cert)
+    {
+        using var pub = cert.GetECDsaPublicKey();
+        if (pub == null)
+            throw new InvalidOperationException("Certificate does not contain an ECDSA public key.");
+
+        var parameters = pub.ExportParameters(false);
+        var x = Base64UrlEncode(parameters.Q.X);
+        var y = Base64UrlEncode(parameters.Q.Y);
+
+        var jwk = $"{{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"{x}\",\"y\":\"{y}\"}}";
+        using var sha = SHA256.Create();
+        var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(jwk));
+        return Base64UrlEncode(hash);
+    }
+#elif UNITY_IOS
     [DllImport("__Internal")]
     private static extern string generateSecureEnclavePublicKey(string label);
 
@@ -52,7 +69,7 @@ public static class CryptoKey
 
         return certificate.GetPublicKeyString();
 #elif UNITY_IOS
-        return generateSecureEnclavePublicKey(label);
+        return generateSecureEnclavePublicKey(keyAlias);
 #elif UNITY_ANDROID
         Debug.Assert(plugin != null,"null plugin");
         return plugin.CallStatic<string>("generateKeystorePublicKeyWithAES256", keyAlias, "unity_aes256_key");
@@ -81,7 +98,7 @@ public static class CryptoKey
 #if UNITY_EDITOR
         return GetCert(keyAlias).GetPublicKeyString();
 #elif UNITY_IOS
-        return getSecureEnclavePublicKey(label);
+        return getSecureEnclavePublicKey(keyAlias);
 #elif UNITY_ANDROID
         Debug.Assert(plugin != null,"null plugin");
         return plugin.CallStatic<string>("getKeystorePublicKey", keyAlias);
@@ -101,7 +118,7 @@ public static class CryptoKey
 
         return "";
 #elif UNITY_IOS
-        return clearSecureEnclavePublicKey(label);
+        return clearSecureEnclavePublicKey(keyAlias);
 #elif UNITY_ANDROID
         Debug.Assert(plugin != null,"null plugin");
         return plugin.CallStatic<string>("clearKeystorePublicKey", keyAlias);
@@ -113,16 +130,22 @@ public static class CryptoKey
     public static string SignJsonToJWTES256(string jsonPayload, string keyAlias = defaultLabel)
     {
 #if UNITY_EDITOR
-        var encodedHeader = Base64UrlEncode(Encoding.UTF8.GetBytes("{\"alg\":\"ES256\",\"typ\":\"JWT\"}"));
-        var signingInput = encodedHeader + "." + jsonPayload;
-
-        // sign using private key from certificate
+        // header includes JWK thumbprint as kid
         var cert = GetCert(keyAlias);
+        if (cert == null)
+            throw new InvalidOperationException($"Certificate for alias '{keyAlias}' not found.");
+
+        var kid = ComputeJwkThumbprint(cert);
+        var header = $"{{\"alg\":\"ES256\",\"typ\":\"JWT\",\"kid\":\"{kid}\"}}";
+        var encodedHeader = Base64UrlEncode(Encoding.UTF8.GetBytes(header));
+        var encodedPayload = Base64UrlEncode(Encoding.UTF8.GetBytes(jsonPayload));
+        var signingInput = encodedHeader + "." + encodedPayload;
+
         using var ecdsa = cert.GetECDsaPrivateKey();
         var signature = ecdsa.SignData(Encoding.UTF8.GetBytes(signingInput), HashAlgorithmName.SHA256);
         return signingInput + "." + Base64UrlEncode(signature);
 #elif UNITY_IOS
-        return signJsonToJWTES256(jsonPayload, label);
+        return signJsonToJWTES256(jsonPayload, keyAlias);
 #elif UNITY_ANDROID
         Debug.Assert(plugin != null,"null plugin");
         return plugin.CallStatic<string>("signJsonToJWTES256", jsonPayload, keyAlias);
@@ -132,9 +155,21 @@ public static class CryptoKey
     public static string SignRawJsonToJWTES256(string rawJsonPayload, string keyAlias = defaultLabel)
     {
 #if UNITY_EDITOR
-        return SignJsonToJWTES256(Base64UrlEncode(Encoding.UTF8.GetBytes(rawJsonPayload)),keyAlias);
+        // rawJsonPayload is expected to be already base64url-encoded; include kid and sign
+        var cert = GetCert(keyAlias);
+        if (cert == null)
+            throw new InvalidOperationException($"Certificate for alias '{keyAlias}' not found.");
+
+        var kid = ComputeJwkThumbprint(cert);
+        var header = $"{{\"alg\":\"ES256\",\"typ\":\"JWT\",\"kid\":\"{kid}\"}}";
+        var encodedHeader = Base64UrlEncode(Encoding.UTF8.GetBytes(header));
+        var signingInput = encodedHeader + "." + rawJsonPayload;
+
+        using var ecdsa = cert.GetECDsaPrivateKey();
+        var signature = ecdsa.SignData(Encoding.UTF8.GetBytes(signingInput), HashAlgorithmName.SHA256);
+        return signingInput + "." + Base64UrlEncode(signature);
 #elif UNITY_IOS
-        return signRawJsonToJWTES256(rawJsonPayload, label);
+        return signRawJsonToJWTES256(rawJsonPayload, keyAlias);
 #elif UNITY_ANDROID
         Debug.Assert(plugin != null,"null plugin");
         return plugin.CallStatic<string>("signRawJsonToJWTES256", rawJsonPayload, keyAlias);

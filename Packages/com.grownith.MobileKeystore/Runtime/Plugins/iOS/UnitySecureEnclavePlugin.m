@@ -1,6 +1,7 @@
 #import "UnitySecureEnclavePlugin.h"
 #import <Security/Security.h>
 #import <stdlib.h>
+#import <CommonCrypto/CommonCrypto.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,6 +56,31 @@ static const char *jwkJsonStringFromSecKey(SecKeyRef key) {
     NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
     const char *utf = [jsonString UTF8String];
     return utf ? strdup(utf) : strdup("");
+}
+
+// Compute JWK thumbprint (RFC 7638) from SecKey public key
+static NSString *jwkThumbprintFromSecKey(SecKeyRef key) {
+    CFErrorRef error = NULL;
+    NSData *keyData = (__bridge_transfer NSData *)SecKeyCopyExternalRepresentation(key, &error);
+
+    if (!keyData || keyData.length != 65) {
+        if (error) CFRelease(error);
+        return @"";
+    }
+
+    NSData *xData = [keyData subdataWithRange:NSMakeRange(1, 32)];
+    NSData *yData = [keyData subdataWithRange:NSMakeRange(33, 32)];
+
+    NSString *x = base64UrlEncode(xData);
+    NSString *y = base64UrlEncode(yData);
+
+    NSString *jwk = [NSString stringWithFormat:@"{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"%@\",\"y\":\"%@\"}", x, y];
+
+    unsigned char hash[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(jwk.UTF8String, (CC_LONG)[jwk lengthOfBytesUsingEncoding:NSUTF8StringEncoding], hash);
+    NSData *hashData = [NSData dataWithBytes:hash length:CC_SHA256_DIGEST_LENGTH];
+
+    return base64UrlEncode(hashData);
 }
 
 static NSData *transcodeDERToRaw(NSData *derData) {
@@ -168,11 +194,19 @@ const char* getSecureEnclavePublicKey(const char* label) {
                 return strdup("");
             }
 
+            // Extract public key from the private key if needed
+            SecKeyRef actualPublicKey = SecKeyCopyPublicKey(publicKey);
+            if (!actualPublicKey) {
+                CFRelease(publicKey);
+                return strdup("");
+            }
+
             @try {
-                return jwkJsonStringFromSecKey(publicKey);
+                return jwkJsonStringFromSecKey(actualPublicKey);
             }
             @finally {
                 CFRelease(publicKey);
+                CFRelease(actualPublicKey);
             }
         } @catch (NSException *e) {
             NSLog(@"Error retrieving Secure Enclave public key: %@", e.reason);
@@ -227,7 +261,14 @@ const char* signJsonToJWTES256(const char* jsonPayload, const char* label) {
                 return strdup("error: private key not found. Generate Secure Enclave key first.");
             }
 
-            NSString *headerJson = @"{\"alg\":\"ES256\",\"typ\":\"JWT\"}";
+            SecKeyRef publicKey = SecKeyCopyPublicKey(privateKey);
+            NSString *kid = @"";
+            if (publicKey) {
+                kid = jwkThumbprintFromSecKey(publicKey);
+                CFRelease(publicKey);
+            }
+
+            NSString *headerJson = [NSString stringWithFormat:@"{\"alg\":\"ES256\",\"typ\":\"JWT\",\"kid\":\"%@\"}", kid];
             NSData *headerData = [headerJson dataUsingEncoding:NSUTF8StringEncoding];
             NSString *header = base64UrlEncode(headerData);
             nsPayload = base64UrlEncodeString(nsPayload);
