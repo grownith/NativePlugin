@@ -1,0 +1,8 @@
+<dependencies>
+  <androidPackages>
+    <androidPackage spec="com.nimbusds:nimbus-jose-jwt:9.+" />
+  </androidPackages>
+  <iosPods>
+    <!-- iosPod name="" path="" version="" bitcodeEnabled="" /!-->
+  </iosPods>
+</dependencies>

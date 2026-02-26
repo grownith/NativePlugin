@@ -1,14 +1,19 @@
 package com.grownith.unityplugin;
 
-import com.unity3d.player.UnityPlayer;
-
 import android.util.Log;
 import android.util.Base64;
-import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
+import android.security.keystore.KeyGenParameterSpec;
 
 import java.nio.charset.StandardCharsets;
+
 import java.security.*;
+import java.security.interfaces.ECPublicKey;
+
+import com.nimbusds.jose.*;
+import com.nimbusds.jose.jwk.*;
+import com.nimbusds.jose.util.Base64URL;
+import com.nimbusds.jose.crypto.ECDSASigner;
 
 public class KeyStoreWrapper {
     private static final String KEYSTORE_PROVIDER = "AndroidKeyStore";
@@ -27,9 +32,12 @@ public class KeyStoreWrapper {
 
             Log.i("kpg",kpg.toString());
             var keyPair = kpg.generateKeyPair();
-            var publicKey = keyPair.getPublic();
+            var publicKey = (ECPublicKey)keyPair.getPublic();
 
-            return Base64.encodeToString(publicKey.getEncoded(), Base64.DEFAULT);
+            return new ECKey.Builder(Curve.forECParameterSpec(publicKey.getParams()),publicKey)
+                    .keyUse(KeyUse.SIGNATURE)
+                    .keyIDFromThumbprint()
+                    .build().toJSONString();
         } catch (Exception e) {
             Log.e("generateKeystorePublicKeyWithAES256",e.toString());
             return "error: " + e.getMessage();
@@ -46,8 +54,11 @@ public class KeyStoreWrapper {
             ks.load(null);
 
             var cert = ks.getCertificate(keyAlias);
-            var publicKey = cert.getPublicKey();
-            return Base64.encodeToString(publicKey.getEncoded(), Base64.DEFAULT);
+            var publicKey = (ECPublicKey)cert.getPublicKey();
+            return new ECKey.Builder(Curve.forECParameterSpec(publicKey.getParams()),publicKey)
+                    .keyUse(KeyUse.SIGNATURE)
+                    .keyIDFromThumbprint()
+                    .build().toJSONString();
         } catch (Exception e) {
             Log.e("UnityPlugin", "Error retrieving encrypted public key: " + e.getMessage());
             return "";
@@ -93,22 +104,12 @@ public class KeyStoreWrapper {
                 return "error: failed to retrieve private key";
             }
 
-            // Create JWT header for ES256
-            String headerJson = "{\"alg\":\"ES256\",\"typ\":\"JWT\"}";
-            String header = Base64.encodeToString(headerJson.getBytes(StandardCharsets.UTF_8),Base64.URL_SAFE | Base64.NO_PADDING | Base64.NO_WRAP);
-
-            // Use provided payload (already Base64-encoded)
-            String payload = jsonPayload.replaceAll("\n", "");
-
-            // Create signature
-            String signatureInput = header + "." + payload;
-            Signature signature = Signature.getInstance("SHA256withECDSA");
-            signature.initSign(privateKey);
-            signature.update(signatureInput.getBytes(StandardCharsets.UTF_8));
-
-            String signaturePart = Base64.encodeToString(signature.sign(),Base64.URL_SAFE | Base64.NO_PADDING | Base64.NO_WRAP);
-
-            return signatureInput + "." + signaturePart;
+            var cert = keyStore.getCertificate(keyAlias);
+            var publicKey = (ECPublicKey)cert.getPublicKey();
+            var signer = new ECDSASigner(privateKey,Curve.forECParameterSpec(publicKey.getParams()));
+            var jwsObject = new JWSObject(new JWSHeader(JWSAlgorithm.ES256),new Payload(Base64URL.from(jsonPayload)));
+            jwsObject.sign(signer);
+            return jwsObject.serialize();
         } catch (Exception e) {
             return "error: " + e.getMessage();
         }
