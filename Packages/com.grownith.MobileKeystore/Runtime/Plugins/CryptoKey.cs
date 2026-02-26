@@ -5,39 +5,39 @@ using UnityEngine;
 public static class CryptoKey {
 #if UNITY_IOS
     [DllImport("__Internal")]
-    private static extern string _UnitySecureEnclavePlugin_generateSecureEnclavePublicKey(string label);
+    private static extern string generateSecureEnclavePublicKey(string label);
 
     [DllImport("__Internal")]
-    private static extern string _UnitySecureEnclavePlugin_getSecureEnclavePublicKey(string label);
+    private static extern string getSecureEnclavePublicKey(string label);
 
     [DllImport("__Internal")]
-    private static extern string _UnitySecureEnclavePlugin_clearSecureEnclavePublicKey(string label);
+    private static extern string clearSecureEnclavePublicKey(string label);
 
     [DllImport("__Internal")]
-    private static extern string _UnitySecureEnclavePlugin_signJsonToJWTES256(string jsonPayload, string label);
+    private static extern string signJsonToJWTES256(string jsonPayload, string label);
 
     [DllImport("__Internal")]
-    private static extern string _UnitySecureEnclavePlugin_signRawJsonToJWTES256(string rawJsonPayload, string label);
+    private static extern string signRawJsonToJWTES256(string rawJsonPayload, string label);
 
     const string defaultLabel = "com.grownith.unity.enclave.key";
     public static string GeneratePublicKey(string label = defaultLabel) {
-        return _UnitySecureEnclavePlugin_generateSecureEnclavePublicKey(label);
+        return generateSecureEnclavePublicKey(label);
     }
 
     public static string GetPublicKey(string label = defaultLabel) {
-        return _UnitySecureEnclavePlugin_getSecureEnclavePublicKey(label);
+        return getSecureEnclavePublicKey(label);
     }
 
     public static string ClearPublicKey(string label = defaultLabel) {
-        return _UnitySecureEnclavePlugin_clearSecureEnclavePublicKey(label);
+        return clearSecureEnclavePublicKey(label);
     }
 
     public static string SignJsonToJWTES256(string jsonPayload, string label = defaultLabel) {
-        return _UnitySecureEnclavePlugin_signJsonToJWTES256(jsonPayload, label);
+        return signJsonToJWTES256(jsonPayload, label);
     }
 
     public static string SignRawJsonToJWTES256(string rawJsonPayload, string label = defaultLabel) {
-        return _UnitySecureEnclavePlugin_signRawJsonToJWTES256(rawJsonPayload, label);
+        return signRawJsonToJWTES256(rawJsonPayload, label);
     }
 #endif
 
